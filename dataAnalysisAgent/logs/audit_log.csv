@@ -52,3 +52,17 @@ plt.close()",charts/cumulative_sales_per_year_20260504_014405.png,A bar chart sh
 20260504_020003,2026-05-04 02:05:35,what is the total units sold on days where the date is the 17th of the month?,1,analyze_data,True,0.00s,df[df['Date'].dt.day == 17]['Units Sold'].sum(),,No result found.
 20260504_020003,2026-05-04 02:05:35,what is the total units sold on days where the date is the 17th of the month?,2,analyze_data,True,0.00s,df[df['Date'].dt.day == 17]['Units Sold'].sum(),,No result found.
 20260504_020003,2026-05-04 02:05:35,what is the total units sold on days where the date is the 17th of the month?,3,analyze_data,True,0.00s,df[df['Date'].dt.day == 17],,No result found.
+20260504_090244,2026-05-04 09:02:56,which product had the highest sales?,1,analyze_data,True,0.01s,result = df.groupby('Product')['Total Sales'].sum().idxmax(),,Laptop
+20260504_090244,2026-05-04 09:03:21,how much did it make compared to the lowest selling product?,1,analyze_data,True,0.00s,"highest_selling_product = df.groupby('Product')['Total Sales'].sum().idxmax()
+lowest_selling_product = df.groupby('Product')['Total Sales'].sum().idxmin()
+highest_sales_value = df.groupby('Product')['Total Sales'].sum().max()
+lowest_sales_value = df.groupby('Product')['Total Sales'].sum().min()
+result = highest_selling_product, highest_sales_value, lowest_selling_product, lowest_sales_value",,"('Laptop', np.float64(2469320.66), 'T-Shirt', np.float64(77885.32))"
+20260504_090244,2026-05-04 09:04:01,what is the difference in terms of percentage between the lowest and the highest ,1,analyze_data,True,0.00s,"highest_sales = df.groupby('Product')['Total Sales'].sum().idxmax()
+highest_amount = df.groupby('Product')['Total Sales'].sum().max()
+
+lowest_sales = df.groupby('Product')['Total Sales'].sum().idxmin()
+lowest_amount = df.groupby('Product')['Total Sales'].sum().min()
+
+difference_percentage = ((highest_amount - lowest_amount) / lowest_amount) * 100
+result = {'product': highest_sales, 'amount': highest_amount, 'lowest_product': lowest_sales, 'lowest_amount': lowest_amount, 'difference_percentage': difference_percentage}",,"{'product': 'Laptop', 'amount': np.float64(2469320.66), 'lowest_product': 'T-Shirt', 'lowest_amount': np.float64(77885.32), 'difference_percentage': np.float64(3070.457102827593)}"

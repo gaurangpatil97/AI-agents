@@ -165,9 +165,7 @@ def analyze_data(code: str) -> str:
 
         # ── DEBUG (commented out) ──
         # print(f"📝 Code being run:\n{code}\n")
-        # print(f"📝 Fixed code:\n{code}\n")
 
-        # check code safety
         is_safe, reason = check_code(code)
         if not is_safe:
             log_block(reason, code=code)
@@ -203,7 +201,6 @@ def generate_chart(code: str, description: str, filename: str) -> str:
         # ── DEBUG (commented out) ──
         # print(f"📝 Chart code being run:\n{code}\n")
 
-        # check code safety
         is_safe, reason = check_code(code)
         if not is_safe:
             log_block(reason, code=code)
@@ -225,13 +222,13 @@ def generate_chart(code: str, description: str, filename: str) -> str:
 
 
 # ── AGENT LOOP ─────────────────────────────────────
-def run_agent(user_question: str):
+# memory_context is passed in from orchestrator
+def run_agent(user_question: str, memory_context: str = "No previous context available."):
     print(f"\n🔍 Question: {user_question}")
     print("-" * 50)
 
     logger.start_question(user_question)
 
-    # check question safety
     is_safe, reason = check_question(user_question)
     if not is_safe:
         log_block(reason, question=user_question)
@@ -245,7 +242,11 @@ The Date column is already parsed as datetime.
 The data spans from {df['Date'].min().date()} to {df['Date'].max().date()} with {len(df)} records.
 Use analyze_data to answer questions and generate_chart to create visualizations.
 IMPORTANT: In generate_chart code, always recompute data from scratch using df.
-'pd', 'plt', 'sns', 'df' and 'filename' are always available in chart code."""},
+'pd', 'plt', 'sns', 'df' and 'filename' are always available in chart code.
+
+--- PREVIOUS CONTEXT ---
+{memory_context}
+------------------------"""},
         {"role": "user", "content": user_question}
     ]
 
@@ -297,11 +298,3 @@ IMPORTANT: In generate_chart code, always recompute data from scratch using df.
     print("\n⚠️ Max iterations reached!")
     logger.finish_question("Max iterations reached — no final answer.")
     return None
-
-# ── RUN ───────────────────────────────────────────
-if __name__ == "__main__":
-    while True:
-        question = input("\n💬 Ask about your sales data (or 'quit' to exit): ")
-        if question.lower() == "quit":
-            break
-        run_agent(question) 

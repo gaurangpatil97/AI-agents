@@ -241,3 +241,46 @@ RESULT: No result found.
 FINAL ANSWER: It seems that there are no records in the dataset for any 17th day of the month. Therefore, the total units sold on those days is indeed zero. If you have any other questions or need further analysis,
 TOTAL STEPS: 3 | TOTAL TIME: 8.86s
 ============================================================
+
+============================================================
+SESSION:   20260504_090244
+QUESTION:  which product had the highest sales?
+TIME:      2026-05-04 09:02:56
+------------------------------------------------------------
+STEP 1 | TOOL: analyze_data | OK | 0.01s
+CODE:   result = df.groupby('Product')['Total Sales'].sum().idxmax()
+RESULT: Laptop
+------------------------------------------------------------
+FINAL ANSWER: The product with the highest sales is **Laptop**.
+TOTAL STEPS: 1 | TOTAL TIME: 2.91s
+============================================================
+
+============================================================
+SESSION:   20260504_090244
+QUESTION:  how much did it make compared to the lowest selling product?
+TIME:      2026-05-04 09:03:21
+------------------------------------------------------------
+STEP 1 | TOOL: analyze_data | OK | 0.00s
+CODE:   highest_selling_product = df.groupby('Product')['Total Sales'].sum().idxmax()
+lowest_selling_product = df.groupby('Product')['Total Sales'].sum().idxm
+RESULT: ('Laptop', np.float64(2469320.66), 'T-Shirt', np.float64(77885.32))
+------------------------------------------------------------
+FINAL ANSWER: The highest selling product is the **Laptop**, which made approximately **$2,469,320.66** in total sales. In contrast, the lowest selling product is the **T-Shirt**, generating around **$77,885.32** i
+TOTAL STEPS: 1 | TOTAL TIME: 5.67s
+============================================================
+
+============================================================
+SESSION:   20260504_090244
+QUESTION:  what is the difference in terms of percentage between the lowest and the highest 
+TIME:      2026-05-04 09:04:01
+------------------------------------------------------------
+STEP 1 | TOOL: analyze_data | OK | 0.00s
+CODE:   highest_sales = df.groupby('Product')['Total Sales'].sum().idxmax()
+highest_amount = df.groupby('Product')['Total Sales'].sum().max()
+
+lowest_sales = 
+RESULT: {'product': 'Laptop', 'amount': np.float64(2469320.66), 'lowest_product': 'T-Shirt', 'lowest_amount': np.float64(77885.32), 'difference_percentage': n
+------------------------------------------------------------
+FINAL ANSWER: The highest selling product is the **Laptop**, generating **$2,469,320.66** in sales, while the lowest selling product is the **T-Shirt**, with **$77,885.32** in sales. The difference in sales between
+TOTAL STEPS: 1 | TOTAL TIME: 4.89s
+============================================================
