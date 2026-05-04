@@ -376,5 +376,145 @@
     "final_answer": "The highest selling product is the **Laptop**, generating **$2,469,320.66** in sales, while the lowest selling product is the **T-Shirt**, with **$77,885.32** in sales. The difference in sales between these two products is approximately **3070.46%**.",
     "total_steps": 1,
     "total_time": "4.89s"
+  },
+  {
+    "session_id": "20260504_205230",
+    "question": "which category had the highest sales and show me a bar chart",
+    "timestamp": "2026-05-04 20:54:13",
+    "steps": [
+      {
+        "step": 1,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.01s",
+        "code": "result = df.groupby('Category')['Total Sales'].sum().idxmax()",
+        "result": "Electronics"
+      },
+      {
+        "step": 2,
+        "tool": "generate_chart",
+        "success": true,
+        "time_taken": "1.70s",
+        "code": "category_sales = df.groupby('Category')['Total Sales'].sum()\n\nplt.figure(figsize=(10, 6))\nsns.barplot(x=category_sales.index, y=category_sales.values, palette='viridis')\nplt.title('Total Sales by Category')\nplt.xlabel('Category')\nplt.ylabel('Total Sales')\nplt.xticks(rotation=45)\nplt.tight_layout()\nplt.savefig('total_sales_by_category.png')\nplt.close()",
+        "filename": "charts/total_sales_by_category_20260504_205420.png",
+        "result": "This bar chart shows the total sales for each product category, highlighting Electronics as the highest selling category."
+      }
+    ],
+    "final_answer": "The category with the highest sales is **Electronics**. A bar chart showing the total sales by category has been created. You can view the chart [here](charts/total_sales_by_category_20260504_205420.png).",
+    "total_steps": 2,
+    "total_time": "10.56s"
+  },
+  {
+    "session_id": "20260504_205230",
+    "question": "and what is the value of the sales for it ",
+    "timestamp": "2026-05-04 20:55:19",
+    "steps": [],
+    "final_answer": "The total sales for the highest selling product, the **Laptop**, is approximately **$2,469,320.66**.",
+    "total_steps": 0,
+    "total_time": "1.54s"
+  },
+  {
+    "session_id": "20260504_210315",
+    "question": "which category had highest sales and show me a bar chart",
+    "timestamp": "2026-05-04 21:03:40",
+    "steps": [
+      {
+        "step": 1,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "result = df.groupby('Category')['Total Sales'].sum().idxmax()",
+        "result": "Electronics"
+      },
+      {
+        "step": 2,
+        "tool": "generate_chart",
+        "success": true,
+        "time_taken": "0.46s",
+        "code": "category_sales = df.groupby('Category')['Total Sales'].sum()\nsns.barplot(x=category_sales.index, y=category_sales.values)\nplt.title('Total Sales by Category')\nplt.xlabel('Category')\nplt.ylabel('Total Sales')\nplt.xticks(rotation=45)\nplt.savefig('total_sales_by_category.png')\nplt.close()",
+        "filename": "charts/total_sales_by_category_20260504_210348.png",
+        "result": "Bar chart showing total sales by category with Electronics having the highest sales."
+      }
+    ],
+    "final_answer": "The category with the highest sales is **Electronics**. Additionally, a bar chart illustrating the total sales by category has been created. You can view the chart [here](charts/total_sales_by_category_20260504_210348.png).",
+    "total_steps": 2,
+    "total_time": "10.48s"
+  },
+  {
+    "session_id": "20260504_210315",
+    "question": "what is the value of sales for it",
+    "timestamp": "2026-05-04 21:04:09",
+    "steps": [
+      {
+        "step": 1,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "df[df['Category'] == 'IT']['Total Sales'].sum()",
+        "result": "No result found."
+      },
+      {
+        "step": 2,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "df[df['Category'] == 'IT']",
+        "result": "No result found."
+      }
+    ],
+    "final_answer": "It appears that there are no records for the **IT** category in the sales dataset. Therefore, the value of sales for IT is zero. If you have any other questions or need insights from different product categories, feel free to ask!",
+    "total_steps": 2,
+    "total_time": "3.99s"
+  },
+  {
+    "session_id": "20260504_210315",
+    "question": "by it i meant the electronics category in the context dumbo",
+    "timestamp": "2026-05-04 21:04:42",
+    "steps": [],
+    "final_answer": "Thank you for the clarification! Given the information that the Electronics category has the highest sales overall, would you like more specific insights or visualizations related to this category? For example, we could look at the total sales by product within the Electronics category or compare sales trends over time. Please let me know what you would like to analyze further!",
+    "total_steps": 0,
+    "total_time": "2.22s"
+  },
+  {
+    "session_id": "20260504_210315",
+    "question": "total sales of the electronics category",
+    "timestamp": "2026-05-04 21:05:08",
+    "steps": [
+      {
+        "step": 1,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "df[df['Category'] == 'Electronics']['Total Sales'].sum()",
+        "result": "No result found."
+      },
+      {
+        "step": 2,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "df[df['Category'] == 'Electronics'].agg({'Total Sales': 'sum'})",
+        "result": "No result found."
+      },
+      {
+        "step": 3,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "df.loc[df['Category'] == 'Electronics', 'Total Sales'].sum()",
+        "result": "No result found."
+      },
+      {
+        "step": 4,
+        "tool": "analyze_data",
+        "success": true,
+        "time_taken": "0.00s",
+        "code": "result = df[df['Category'].str.contains('Electronics')]['Total Sales'].sum()",
+        "result": "5028995.209999999"
+      }
+    ],
+    "final_answer": "The total sales of the Electronics category amount to approximately $5,028,995.21.",
+    "total_steps": 4,
+    "total_time": "6.31s"
   }
 ]
