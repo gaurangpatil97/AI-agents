@@ -141,7 +141,7 @@ tools = [
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python matplotlib/seaborn code. 'df', 'pd', 'plt', 'sns' are all available. ALWAYS recompute data from df from scratch. Always call plt.savefig(filename) and plt.close() at the end.\nCRITICAL: You MUST use plt.savefig(filename) — never hardcode any path or filename string. The variable 'filename' already has the correct path."
+                        "description": "Python code to generate a chart. Follow this exact pattern:\n1. Compute data from df (always reset_index())\n2. fig, ax = plt.subplots(figsize=(10, 6))\n3. Plot using ax methods (ax.bar, ax.plot, ax.pie)\n4. ax.set_title(), ax.set_xlabel(), ax.set_ylabel()\n5. plt.tight_layout()\n6. plt.savefig(filename, dpi=100, bbox_inches='tight')\n7. plt.close()\nAvailable: df, pd, plt, sns, filename"
                     },
                     "description": {"type": "string", "description": "Short description of what this chart shows"},
                     "filename": {"type": "string", "description": "snake_case filename without extension e.g. 'sales_by_region'"}
@@ -264,8 +264,36 @@ You have access to a sales dataset with these columns: {list(df.columns)}.
 The Date column is already parsed as datetime.
 The data spans from {df['Date'].min().date()} to {df['Date'].max().date()} with {len(df)} records.
 Use analyze_data to answer questions and generate_chart to create visualizations.
-IMPORTANT: In generate_chart code, always recompute data from scratch using df.
-'pd', 'plt', 'sns', 'df' and 'filename' are always available in chart code.
+
+=== CHART GENERATION PATTERN (ALWAYS FOLLOW) ===
+When generating charts, use this exact pattern:
+
+Step 1: Compute the data fresh from df:
+   data = df.groupby('Column')['Value'].mean().reset_index()
+
+Step 2: Create the plot:
+   fig, ax = plt.subplots(figsize=(10, 6))
+
+Step 3: Plot the data using ax:
+   ax.bar(data['Column'], data['Value'])
+
+Step 4: Add labels:
+   ax.set_xlabel('...')
+   ax.set_ylabel('...')
+   ax.set_title('...')
+
+Step 5: Save and close - ALWAYS use filename variable:
+   plt.tight_layout()
+   plt.savefig(filename, dpi=100, bbox_inches='tight')
+   plt.close()
+
+RULES:
+- NEVER use seaborn for complex charts
+- NEVER reference variables from previous tool calls
+- ALWAYS use plt.subplots() instead of plt.figure()
+- ALWAYS call plt.close() at the end
+- ALWAYS use the filename variable for saving
+- Import nothing - pd, plt, sns, df are already available
 
 --- PREVIOUS CONTEXT ---
 {memory_context}

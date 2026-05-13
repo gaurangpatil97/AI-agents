@@ -16,6 +16,8 @@ export default function Home() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [expandedMemory, setExpandedMemory] = useState(false);
+  const [expandedAccordions, setExpandedAccordions] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef('');
 
@@ -30,16 +32,12 @@ export default function Home() {
     ]);
   };
 
-  // Streaming behavior uses a ref to accumulate chunks and prevent async state issues
   const appendStreamingMessage = (chunk: string) => {
-    // filter out dot-only chunks
     const trimmed = chunk.trim();
     if (trimmed === '•' || trimmed === '·' || trimmed === '.') return;
 
-    // Immediately accumulate to ref (synchronous)
     streamingContentRef.current += chunk;
 
-    // Update state with complete accumulated content
     setMessages((prev) => {
       const withoutStreaming = prev.filter((m) => m.type !== 'streaming');
       return [
@@ -54,7 +52,6 @@ export default function Home() {
   };
 
   const finalizeStreamingMessage = (content: string) => {
-    // finalize: clear ref, remove streaming bubble, append final answer
     streamingContentRef.current = '';
     setMessages((prev) => {
       const withoutStreaming = prev.filter((m) => m.type !== 'streaming');
@@ -66,26 +63,23 @@ export default function Home() {
   };
 
   const suggestedQuestions = [
-    'Which product had highest sales?',
-    'Show me sales by region as pie chart',
-    'What is the monthly sales trend?',
-    'Which age group spends the most?'
+    { text: 'Which product had highest sales?', icon: '📊' },
+    { text: 'Show me sales by region as pie chart', icon: '🥧' },
+    { text: 'What is the monthly sales trend?', icon: '📈' },
+    { text: 'Which age group spends the most?', icon: '👥' },
   ];
 
-  // Connect to WebSocket
   useEffect(() => {
     const websocket = new WebSocket('ws://localhost:8000/ws');
 
     websocket.onopen = () => {
       console.log('Connected!');
-      console.log('✅ Connected to backend on ws://localhost:8000/ws');
       setWs(websocket);
     };
 
     websocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('Received message:', data);
 
         const rawType = String(data.type ?? '').toUpperCase();
         const messageText = typeof data.message === 'string' ? data.message : '';
@@ -101,10 +95,8 @@ export default function Home() {
             return;
           }
 
-          // append final answer as its own message
           finalizeStreamingMessage(messageText);
         } else if (rawType === 'UPDATE' || rawType === 'CHUNK') {
-          // decide whether this is a streaming chunk (small token) or a pipeline update
           if (messageText.includes('===') || messageText.includes('---')) {
             return;
           }
@@ -154,12 +146,10 @@ export default function Home() {
     };
 
     websocket.onerror = (error) => {
-      console.log('Error:', error);
       console.error('WebSocket error:', error);
     };
 
     websocket.onclose = () => {
-      console.log('Disconnected from backend');
       setWs(null);
     };
 
@@ -170,17 +160,13 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = (question: string) => {
-    console.log("handleSend called with:", question);
     if (!question.trim() || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-    console.log('Sending:', question);
-    // Add user message - NEVER clear, only append
     setMessages(prev => [...prev, {
       id: `${Date.now()}-user`,
       type: 'user',
@@ -196,31 +182,62 @@ export default function Home() {
     handleSend(question);
   };
 
-  // Determine color and style for pipeline messages based on content
-  const getPipelineStyle = (content: string) => {
-    if (content.includes('Orchestrator')) {
-      return { bg: 'bg-gray-700', text: 'text-gray-200', icon: '🎯' };
-    } else if (content.includes('Memory')) {
-      return { bg: 'bg-purple-900', text: 'text-purple-100', icon: '🧠', italic: true };
-    } else if (content.includes('Clarifier')) {
-      return { bg: 'bg-indigo-900', text: 'text-indigo-100', icon: '🔀' };
-    } else if (content.includes('Analysis')) {
-      return { bg: 'bg-blue-900', text: 'text-blue-100', icon: '🤖' };
-    } else if (content.includes('Using tool')) {
-      return { bg: 'bg-green-900', text: 'text-green-100', icon: '🛠️', mono: true };
-    } else if (content.includes('Chart saved')) {
-      return { bg: 'bg-teal-900', text: 'text-teal-100', icon: '✅' };
+  const toggleAccordion = (groupId: string) => {
+    const newExpanded = new Set(expandedAccordions);
+    if (newExpanded.has(groupId)) {
+      newExpanded.delete(groupId);
+    } else {
+      newExpanded.add(groupId);
     }
-    return { bg: 'bg-gray-700', text: 'text-gray-200', icon: '•' };
+    setExpandedAccordions(newExpanded);
   };
 
-  // Render message based on type
+  // Group consecutive pipeline messages into an accordion group
+  const getMessageGroups = () => {
+    const nonStreamingMessages = messages.filter((m) => m.type !== 'streaming');
+    const groups: any[] = [];
+    let pipelineGroup: any[] = [];
+
+    for (const msg of nonStreamingMessages) {
+      if (msg.type === 'pipeline') {
+        pipelineGroup.push(msg);
+      } else {
+        if (pipelineGroup.length > 0) {
+          groups.push({ type: 'accordion', messages: pipelineGroup, id: pipelineGroup[0].id });
+          pipelineGroup = [];
+        }
+        groups.push({ type: 'single', message: msg });
+      }
+    }
+    if (pipelineGroup.length > 0) {
+      groups.push({ type: 'accordion', messages: pipelineGroup, id: pipelineGroup[0].id });
+    }
+    return groups;
+  };
+
+  const getPipelineStyle = (content: string) => {
+    if (content.includes('Orchestrator')) {
+      return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '🎯' };
+    } else if (content.includes('Memory')) {
+      return { bg: 'bg-slate-600', text: 'text-slate-50 font-medium', icon: '🧠', isMemory: true };
+    } else if (content.includes('Clarifier')) {
+      return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '🔀' };
+    } else if (content.includes('Analysis')) {
+      return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '🤖' };
+    } else if (content.includes('Using tool')) {
+      return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '🛠️', mono: true };
+    } else if (content.includes('Chart saved')) {
+      return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '✅' };
+    }
+    return { bg: 'bg-slate-700', text: 'text-slate-50 font-medium', icon: '•' };
+  };
+
   const renderMessage = (msg: any) => {
     if (msg.type === 'user') {
       return (
-        <div key={msg.id} className="flex justify-end mb-4">
-          <div className="max-w-xs lg:max-w-md bg-blue-500 text-white px-4 py-3 rounded-xl shadow-lg wrap-break-word">
-            {msg.content}
+        <div key={msg.id} className="flex justify-end mb-6">
+          <div className="max-w-xs lg:max-w-md bg-indigo-600 text-white px-6 py-4 rounded-2xl shadow-lg">
+            <p className="text-sm leading-relaxed">{msg.content}</p>
           </div>
         </div>
       );
@@ -234,30 +251,55 @@ export default function Home() {
         const driveUrl = urlMatch ? urlMatch[0] : null;
 
         return (
-          <div key={msg.id} className="flex justify-start mb-1.5">
-            <div className={`text-xs px-3 py-1.5 rounded-lg ${style.bg} ${style.text} shadow-sm ${style.italic ? 'italic' : ''} ${style.mono ? 'font-mono' : ''}`}>
-              <span className="mr-1">{style.icon}</span>
-              {driveUrl ? (
-                <>
-                  {msg.content.replace(driveUrl, '')}
-                  <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
-                    {driveUrl}
-                  </a>
-                </>
-              ) : (
-                msg.content
+          <div key={msg.id} className="flex justify-start mb-3">
+            <div className={`text-xs px-4 py-2 rounded-full ${style.bg} ${style.text} shadow-sm font-mono flex items-center gap-2`}>
+              <span>{style.icon}</span>
+              <span>{msg.content.replace(driveUrl, '').trim()}</span>
+              {driveUrl && (
+                <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:text-blue-200 underline ml-1">
+                  Link
+                </a>
               )}
             </div>
           </div>
         );
       }
-      
-      // Regular pipeline message
+
+      if (style.isMemory && !expandedMemory) {
+        const firstLine = msg.content.split('\n')[0];
+        return (
+          <div key={msg.id} className="flex justify-start mb-3">
+            <button
+              onClick={() => setExpandedMemory(true)}
+              className={`text-xs px-4 py-2 rounded-full ${style.bg} ${style.text} shadow-sm font-mono hover:opacity-80 transition`}
+            >
+              {style.icon} {firstLine}... <span className="text-slate-400 text-xs ml-2 px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 hover:underline transition cursor-pointer">Show context</span>
+            </button>
+          </div>
+        );
+      }
+
+      if (style.isMemory && expandedMemory) {
+        return (
+          <div key={msg.id} className="flex justify-start mb-3">
+            <div className={`text-xs px-4 py-3 rounded-lg ${style.bg} ${style.text} shadow-sm font-mono max-w-md`}>
+              <div className="whitespace-pre-wrap text-slate-200">{msg.content}</div>
+              <button
+                onClick={() => setExpandedMemory(false)}
+                className="text-xs text-slate-400 hover:text-slate-300 mt-2 underline px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 transition"
+              >
+                Hide context
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return (
-        <div key={msg.id} className="flex justify-start mb-1.5">
-          <div className={`text-xs px-3 py-1.5 rounded-lg ${style.bg} ${style.text} shadow-sm ${style.italic ? 'italic' : ''} ${style.mono ? 'font-mono' : ''}`}>
-            <span className="mr-1">{style.icon}</span>
-            {msg.content}
+        <div key={msg.id} className="flex justify-start mb-3">
+          <div className={`text-xs px-4 py-2 rounded-full ${style.bg} ${style.text} shadow-sm font-mono flex items-center gap-2`}>
+            <span>{style.icon}</span>
+            <span>{msg.content}</span>
           </div>
         </div>
       );
@@ -265,11 +307,9 @@ export default function Home() {
 
     if (msg.type === 'streaming') {
       return (
-        <div key={msg.id} className="flex justify-start mb-4">
-          <div className="max-w-md lg:max-w-2xl bg-gray-800 text-gray-100 px-5 py-3 rounded-xl border border-gray-700 shadow-lg">
-            <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
-              {msg.content}
-            </p>
+        <div key={msg.id} className="flex justify-start mb-6">
+          <div className="max-w-md lg:max-w-2xl bg-slate-800 text-slate-100 px-6 py-4 rounded-2xl border border-slate-700 shadow-lg">
+            <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
           </div>
         </div>
       );
@@ -277,11 +317,11 @@ export default function Home() {
 
     if (msg.type === 'chart') {
       return (
-        <div key={msg.id} className="flex justify-start mb-4">
+        <div key={msg.id} className="flex justify-start mb-6">
           <img
             src={msg.imageUrl}
             alt="Generated chart"
-            className="rounded-xl max-w-2xl w-full mt-2 border border-gray-700"
+            className="rounded-2xl max-w-2xl w-full border border-slate-700 shadow-lg"
           />
         </div>
       );
@@ -293,29 +333,27 @@ export default function Home() {
         .replace(/\(sandbox:[^)]+\)/g, '')
         .trim();
 
-      // Final answer with markdown rendering
       return (
-        <div key={msg.id} className="flex justify-start mb-6 mt-6">
-          <div className="max-w-md lg:max-w-2xl bg-gray-800 text-gray-100 px-5 py-4 rounded-xl border-2 border-gray-700 shadow-lg">
-            <div className="text-sm text-gray-200 leading-relaxed prose prose-invert prose-sm max-w-none">
+        <div key={msg.id} className="flex justify-start mb-8">
+          <div className="max-w-md lg:max-w-2xl bg-slate-800 text-slate-100 px-6 py-5 rounded-2xl border-l-4 border-teal-500 shadow-lg">
+            <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
               <ReactMarkdown
                 components={{
-                  p: ({ children }) => <p className="mb-2">{children}</p>,
-                  li: ({ children }) => <li className="ml-4 list-disc">{children}</li>,
-                  ul: ({ children }) => <ul className="mb-2">{children}</ul>,
+                  p: ({ children }) => <p className="mb-3 text-slate-200">{children}</p>,
+                  li: ({ children }) => <li className="ml-4 list-disc text-slate-200">{children}</li>,
+                  ul: ({ children }) => <ul className="mb-3">{children}</ul>,
                   code: ({ children }) => (
-                    <code className="bg-gray-900 px-1.5 py-0.5 rounded text-gray-100 font-mono text-xs">
+                    <code className="bg-slate-900 px-2 py-1 rounded text-slate-100 font-mono text-xs">
                       {children}
                     </code>
                   ),
                   a: ({ children, href }) => {
-                    // Convert sandbox:/ URLs to localhost:8000
                     let finalHref = href;
                     if (href && href.startsWith('sandbox:/')) {
                       finalHref = href.replace(/^sandbox:\//, 'http://localhost:8000/');
                     }
                     return (
-                      <a href={finalHref} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                      <a href={finalHref} target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:text-teal-300 underline">
                         {children}
                       </a>
                     );
@@ -333,51 +371,71 @@ export default function Home() {
     return null;
   };
 
-  // Empty state
+  // Empty state - Home Screen
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className="min-h-screen bg-linear-to-b from-gray-900 to-black flex flex-col items-center justify-center px-4">
+      <div className="min-h-screen bg-linear-to-br from-gray-950 via-slate-900 to-gray-950 flex flex-col items-center justify-center px-6 py-12" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
         <div className="w-full max-w-2xl">
-          {/* Title and Subtitle */}
-          <div className="text-center mb-12">
-            <h1 className="text-5xl font-bold text-gray-100 mb-2">
-              📊 Data Analysis Agent
+          {/* Title with radial gradient glow effect */}
+          <div className="text-center mb-16 relative">
+            <div className="absolute inset-0 bg-gradient-radial from-indigo-500/20 via-transparent to-transparent blur-3xl opacity-60 -z-10" style={{ width: '500px', left: '50%', transform: 'translateX(-50%)', top: '-100px' }}></div>
+            
+            {/* SVG Bar Chart Icon */}
+            <div className="flex justify-center mb-6">
+              <svg className="w-16 h-16 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="3" y="13" width="3" height="8" fill="currentColor" />
+                <rect x="10.5" y="8" width="3" height="13" fill="currentColor" />
+                <rect x="18" y="4" width="3" height="17" fill="currentColor" />
+              </svg>
+            </div>
+
+            <h1 className="text-6xl font-bold text-gray-50 mb-4 tracking-tight">
+              Data Analysis Agent
             </h1>
-            <p className="text-xl text-gray-400">
-              Ask anything about your sales data
+            <p className="text-base text-slate-400">
+              Intelligent multi-agent system for sales insights and visualization
             </p>
           </div>
 
           {/* Input Box */}
-          <div className="mb-8">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)}
-                placeholder="Ask about sales data..."
-                className="flex-1 px-4 py-3 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-800 text-gray-100 placeholder-gray-500"
-              />
+          <div className="mb-10">
+            <div className="flex gap-3">
+              <div className="flex-1 relative group">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)}
+                  placeholder="Ask about your sales data..."
+                  className="w-full px-6 py-4 rounded-xl border border-slate-700 bg-slate-800/50 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 focus:shadow-[0_0_16px_rgba(99,102,241,0.4)] transition-all"
+                />
+                <div className="absolute inset-0 rounded-xl bg-linear-to-r from-indigo-500/0 via-indigo-500/0 to-indigo-500/0 group-focus-within:from-indigo-500/10 group-focus-within:via-indigo-500/5 group-focus-within:to-indigo-500/10 pointer-events-none" />
+              </div>
               <button
                 onClick={() => handleSend(inputValue)}
                 disabled={!inputValue.trim()}
-                className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed transition font-semibold"
+                className="px-8 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-slate-700 disabled:cursor-not-allowed transition font-semibold text-lg"
               >
-                ➜
+                →
               </button>
             </div>
+            <p className="text-xs text-slate-500 text-center mt-4">
+              Powered by GPT-4o-mini • Multi-agent system
+            </p>
           </div>
 
-          {/* Suggested Questions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {suggestedQuestions.map((question, idx) => (
+          {/* Suggested Questions - As Chips */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {suggestedQuestions.map((q, idx) => (
               <button
                 key={idx}
-                onClick={() => handleSuggestedQuestion(question)}
-                className="p-4 text-left rounded-xl border border-gray-700 hover:bg-gray-800 hover:border-gray-600 transition text-gray-300 text-sm font-medium hover:shadow-lg"
+                onClick={() => handleSuggestedQuestion(q.text)}
+                className="group p-4 text-left rounded-2xl border border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600 transition text-slate-300 text-sm font-medium hover:shadow-lg hover:shadow-indigo-500/10"
               >
-                {question}
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">{q.icon}</span>
+                  <span className="group-hover:text-slate-100 transition">{q.text}</span>
+                </div>
               </button>
             ))}
           </div>
@@ -388,34 +446,65 @@ export default function Home() {
 
   // Chat state
   return (
-    <div className="min-h-screen bg-linear-to-b from-gray-900 to-black flex flex-col">
-      {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 shadow-lg sticky top-0">
-        <h1 className="text-2xl font-bold text-gray-100">📊 Data Analysis Agent</h1>
-        <p className="text-sm text-gray-400">Multi-agent sales analysis system</p>
+    <div className="min-h-screen bg-linear-to-br from-gray-950 via-slate-900 to-gray-950 flex flex-col" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Header - Proper Navbar */}
+      <div className="bg-slate-900/50 backdrop-blur-sm border-b border-slate-700/50 px-8 py-5 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto flex items-center gap-3">
+          <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <rect x="3" y="13" width="2" height="8" fill="currentColor" />
+            <rect x="10" y="8" width="2" height="13" fill="currentColor" />
+            <rect x="17" y="4" width="2" height="17" fill="currentColor" />
+          </svg>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-50">Data Analysis Agent</h1>
+            <p className="text-xs text-slate-500">Multi-agent sales analysis system</p>
+          </div>
+        </div>
       </div>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="max-w-4xl mx-auto space-y-2">
-          {messages.filter(m => m.type !== 'streaming').map((msg) => renderMessage(msg))}
+      <div className="flex-1 overflow-y-auto px-8 py-8">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {getMessageGroups().map((group) => {
+            if (group.type === 'accordion') {
+              const isExpanded = expandedAccordions.has(group.id);
+              return (
+                <div key={group.id} className="flex justify-start mb-4">
+                  <div className="w-full">
+                    <button
+                      onClick={() => toggleAccordion(group.id)}
+                      className="mb-2 text-sm px-4 py-2 rounded-lg bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-slate-100 transition font-medium flex items-center gap-2"
+                    >
+                      <span>{isExpanded ? '⚙️ Hide agent reasoning' : '⚙️ View agent reasoning'}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="space-y-1">
+                        {group.messages.map((msg: any) => renderMessage(msg))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            } else {
+              return renderMessage(group.message);
+            }
+          })}
           {isLoading && (
-            <div className="flex justify-start mt-4">
-              <div className="text-gray-400 text-sm px-4 py-3 bg-gray-800 rounded-xl flex items-center gap-2 shadow-lg">
-                <span className="flex gap-1.5">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-bounce" />
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+            <div className="flex justify-start mt-6">
+              <div className="text-slate-400 text-sm px-6 py-4 bg-slate-800 rounded-2xl flex items-center gap-3 shadow-lg">
+                <span className="flex gap-2">
+                  <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" />
+                  <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                  <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                 </span>
                 <span>Analyzing...</span>
               </div>
             </div>
           )}
-          {/* Typing area for streaming bubble (growing text) */}
           {messages.filter(m => m.type === 'streaming').map((msg) => (
-            <div key={msg.id} className="flex justify-start mb-4">
-              <div className="max-w-md lg:max-w-2xl bg-gray-800 text-gray-100 px-5 py-3 rounded-xl border border-gray-700 shadow-lg">
-                <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+            <div key={msg.id} className="flex justify-start mb-6">
+              <div className="max-w-md lg:max-w-2xl bg-slate-800 text-slate-100 px-6 py-4 rounded-2xl border border-slate-700 shadow-lg">
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
             </div>
           ))}
@@ -423,24 +512,27 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Input Area (Fixed at bottom) */}
-      <div className="bg-gray-900 border-t border-gray-800 px-6 py-4 shadow-xl">
-        <div className="max-w-4xl mx-auto flex gap-2">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)}
-            placeholder="Ask about your sales data..."
-            disabled={isLoading}
-            className="flex-1 px-4 py-3 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-800 disabled:text-gray-500 bg-gray-800 text-gray-100 placeholder-gray-500"
-          />
+      {/* Input Area - Fixed at bottom, matches home screen */}
+      <div className="bg-slate-900/50 backdrop-blur-sm border-t border-slate-700/50 px-8 py-6 shadow-xl">
+        <div className="max-w-4xl mx-auto flex gap-3">
+          <div className="flex-1 relative group">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend(inputValue)}
+              placeholder="Ask about your sales data..."
+              disabled={isLoading}
+              className="w-full px-6 py-4 rounded-xl border border-slate-700 bg-slate-800/50 text-slate-100 placeholder-slate-500 disabled:opacity-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 transition-all"
+            />
+            <div className="absolute inset-0 rounded-xl bg-linear-to-r from-indigo-500/0 via-indigo-500/0 to-indigo-500/0 group-focus-within:from-indigo-500/10 group-focus-within:via-indigo-500/5 group-focus-within:to-indigo-500/10 pointer-events-none" />
+          </div>
           <button
             onClick={() => handleSend(inputValue)}
             disabled={!inputValue.trim() || isLoading}
-            className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed transition font-semibold"
+            className="px-8 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-slate-700 disabled:cursor-not-allowed transition font-semibold text-lg"
           >
-            ➜
+            →
           </button>
         </div>
       </div>
