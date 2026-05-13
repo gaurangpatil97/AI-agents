@@ -27,12 +27,17 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def clarify_question(question: str, memory_context: str) -> str:
+def clarify_question(question: str, memory_context: str, callback=None) -> str:
     """
     Takes a vague question and memory context
     and rewrites it into a clear specific question.
     Returns the clarified question.
     """
+    def emit(msg: str):
+        if callback:
+            callback(msg)
+        else:
+            print(msg)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -68,7 +73,7 @@ Rewrite this question to be clear and specific:"""
 
     # if clarifier changed the question, show it
     if clarified.lower() != question.lower():
-        print(f"💡 Clarified: '{question}' → '{clarified}'")
+        emit(f"💡 Clarified: '{question}' → '{clarified}'")
 
     return clarified
 

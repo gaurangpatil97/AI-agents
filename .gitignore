@@ -1,5 +1,31 @@
-.env
-research-agent-env/
+# Python
 __pycache__/
+*.pyc
+*.pyo
+research-agent-env/
+
+# Secrets
+.env
+backend/credentials.json
+backend/token.json
 credentials.json
 token.json
+
+# Generated files - never commit these
+backend/charts/
+backend/logs/
+charts/
+logs/
+
+# Old folder (renamed to backend)
+dataAnalysisAgent/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

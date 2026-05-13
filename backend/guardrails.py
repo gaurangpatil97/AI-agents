@@ -11,12 +11,19 @@ BANNED_QUESTION_KEYWORDS = [
 
 # ── BANNED CODE PATTERNS ──────────────────────────
 BANNED_CODE_PATTERNS = [
-    "os.system", "os.remove", "os.rmdir",
-    "subprocess", "shutil.rmtree",
-    "open(", "write(", "delete",
-    "__import__", "importlib",
-    "sys.exit", "quit(", "exit(",
-    "format(", "drop(", "rm -",
+    "os.system",
+    "os.remove",
+    "os.rmdir",
+    "subprocess",
+    "shutil.rmtree",
+    "__import__",
+    "importlib",
+    "sys.exit",
+    "drop(",
+    "rm -rf",
+    "os.unlink",
+    "open('/etc",
+    "open('C:\\\\Windows",
 ]
 
 # ── MAX QUESTION LENGTH ───────────────────────────

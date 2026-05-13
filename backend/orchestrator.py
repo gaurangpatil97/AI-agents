@@ -8,21 +8,27 @@ from clarifierAgent import clarify_question, is_vague
 
 load_dotenv()
 
-def run_pipeline(user_question: str):
-    print(f"\n{'='*60}")
-    print(f"🎯 Orchestrator received: {user_question}")
-    print(f"{'='*60}")
+def run_pipeline(user_question: str, callback=None):
+    def emit(msg: str):
+        if callback:
+            callback(msg)
+        else:
+            print(msg)
+    
+    emit(f"\n{'='*60}")
+    emit(f"🎯 Orchestrator received: {user_question}")
+    emit(f"{'='*60}")
 
     # ── STEP 1: GET MEMORY CONTEXT ────────────────
-    print("\n🧠 Memory Agent: fetching context...")
-    memory_context = get_memory_summary(n=3)
+    emit("\n🧠 Memory Agent: fetching context...")
+    memory_context = get_memory_summary(callback=callback)
 
     # ── STEP 2: NON-LINEAR ROUTING ────────────────
     if is_vague(user_question):
-        print("🔀 Clarifier Agent: question is vague, clarifying...")
-        final_question = clarify_question(user_question, memory_context)
+        emit("🔀 Clarifier Agent: question is vague, clarifying...")
+        final_question = clarify_question(user_question, memory_context, callback=callback)
     else:
-        print("✅ Question is clear, skipping clarifier")
+        emit("✅ Question is clear, skipping clarifier")
         final_question = user_question
 
     # ── STEP 3: COUNT CHARTS BEFORE RUNNING ───────
@@ -31,8 +37,8 @@ def run_pipeline(user_question: str):
     charts_before = set(os.listdir(charts_dir))
 
     # ── STEP 4: RUN ANALYSIS AGENT ────────────────
-    print("🤖 Analysis Agent: working on it...")
-    answer = run_agent(final_question, memory_context=memory_context)
+    emit("🤖 Analysis Agent: working on it...")
+    answer = run_agent(final_question, memory_context=memory_context, callback=callback)
 
     # ── STEP 5: UPLOAD ONLY NEW CHARTS ────────────
     if answer:
@@ -40,9 +46,9 @@ def run_pipeline(user_question: str):
         new_charts = charts_after - charts_before  # only brand new files
         if new_charts:
             latest = os.path.join(charts_dir, list(new_charts)[0])
-            print(f"\n☁️  Drive Agent: uploading {list(new_charts)[0]} to Drive...")
+            emit(f"\n☁️  Drive Agent: uploading {list(new_charts)[0]} to Drive...")
             link = upload_chart_to_drive(latest)
-            print(f"🔗 Chart link: {link}")
+            emit(f"🔗 Chart link: {link}")
 
     return answer
 

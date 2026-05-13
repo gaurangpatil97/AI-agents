@@ -57,7 +57,7 @@ class AuditLogger:
         self._save_json()
         self._save_csv()
         self._save_txt()
-        print(f"📋 Logs saved!")
+        print(f"\n📋 Logs saved!")
 
     def _save_json(self):
         path = "logs/audit_log.json"
@@ -141,7 +141,7 @@ tools = [
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python matplotlib/seaborn code. 'df', 'pd', 'plt', 'sns' are all available. ALWAYS recompute data from df from scratch. Always call plt.savefig(filename) and plt.close() at the end."
+                        "description": "Python matplotlib/seaborn code. 'df', 'pd', 'plt', 'sns' are all available. ALWAYS recompute data from df from scratch. Always call plt.savefig(filename) and plt.close() at the end.\nCRITICAL: You MUST use plt.savefig(filename) — never hardcode any path or filename string. The variable 'filename' already has the correct path."
                     },
                     "description": {"type": "string", "description": "Short description of what this chart shows"},
                     "filename": {"type": "string", "description": "snake_case filename without extension e.g. 'sales_by_region'"}
@@ -163,22 +163,23 @@ def analyze_data(code: str) -> str:
             lines[-1] = f"result = {last_line}"
             code = "\n".join(lines)
 
-        # ── DEBUG (commented out) ──
-        # print(f"📝 Code being run:\n{code}\n")
-
         is_safe, reason = check_code(code)
         if not is_safe:
             log_block(reason, code=code)
             logger.log_step(tool="analyze_data", code=code, result=f"BLOCKED: {reason}", success=False, time_taken="0s")
             return f"🚫 Blocked: {reason}"
 
-        local_vars = {"df": df.copy(), "pd": pd}
+        local_vars = {"df": df.copy(), "pd": pd, "np": __import__('numpy')}
         exec(code, local_vars, local_vars)
 
         result = local_vars.get("result")
         if result is None:
-            user_vars = {k: v for k, v in local_vars.items()
-                        if k not in ["df", "pd"] and not k.startswith("__")}
+            user_vars = {
+                k: v for k, v in local_vars.items()
+                if k not in ["df", "pd", "np"]
+                and not k.startswith("__")
+                and not callable(v)
+            }
             result = list(user_vars.values())[-1] if user_vars else "No result found."
 
         time_taken = f"{time.time() - start:.2f}s"
@@ -191,15 +192,12 @@ def analyze_data(code: str) -> str:
         return f"Error running analysis: {str(e)}"
 
 
-def generate_chart(code: str, description: str, filename: str) -> str:
+def generate_chart(code: str, description: str, filename: str, callback=None) -> str:
     start = time.time()
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_filename = f"charts/{filename}_{timestamp}.png"
         os.makedirs("charts", exist_ok=True)
-
-        # ── DEBUG (commented out) ──
-        # print(f"📝 Chart code being run:\n{code}\n")
 
         is_safe, reason = check_code(code)
         if not is_safe:
@@ -210,22 +208,47 @@ def generate_chart(code: str, description: str, filename: str) -> str:
         local_vars = {"df": df.copy(), "pd": pd, "plt": plt, "sns": sns, "filename": safe_filename}
         exec(code, local_vars, local_vars)
 
+        # ── VERIFY OUTPUT FILE EXISTS ─────────────────────────────────────────────
+        if os.path.exists(safe_filename):
+            print(f"✅ Verified chart exists: {safe_filename}")
+        else:
+            import glob
+            import shutil
+
+            new_pngs = glob.glob("*.png")
+            if new_pngs:
+                dest = f"charts/{new_pngs[0]}"
+                shutil.move(new_pngs[0], dest)
+                safe_filename = dest
+                print(f"✅ Moved chart to: {safe_filename}")
+            else:
+                return f"Error: Chart file was not created"
+
         time_taken = f"{time.time() - start:.2f}s"
         logger.log_step(tool="generate_chart", code=code, filename=safe_filename, result=description, success=True, time_taken=time_taken)
-        print(f"📊 Chart saved: {safe_filename}")
-        return f"✅ Chart saved: {safe_filename} — {description}"
+        chart_msg = f"📊 Chart saved: {safe_filename}"
+        if callback:
+            callback(chart_msg)
+        print(chart_msg)
+        return f"✅ Chart saved: {safe_filename}"
 
     except Exception as e:
         time_taken = f"{time.time() - start:.2f}s"
         logger.log_step(tool="generate_chart", code=code, result=str(e), success=False, time_taken=time_taken)
+        print(f"Chart generation error: {str(e)}")
         return f"Error generating chart: {str(e)}"
 
 
-# ── AGENT LOOP ─────────────────────────────────────
-# memory_context is passed in from orchestrator
-def run_agent(user_question: str, memory_context: str = "No previous context available."):
-    print(f"\n🔍 Question: {user_question}")
-    print("-" * 50)
+# ── STREAMING AGENT LOOP ───────────────────────────
+def run_agent(user_question: str, memory_context: str = "No previous context available.", callback=None):
+    def emit(msg: str):
+        if callback:
+            callback(msg)
+        else:
+            print(msg)
+    
+    emit(f"\n🔍 Question: {user_question}")
+    emit("-" * 50)
 
     logger.start_question(user_question)
 
@@ -250,51 +273,106 @@ IMPORTANT: In generate_chart code, always recompute data from scratch using df.
         {"role": "user", "content": user_question}
     ]
 
-    max_iterations = 8
+    max_iterations = 15
     iteration = 0
+    final_answer = ""
 
     while iteration < max_iterations:
         iteration += 1
 
-        response = client.chat.completions.create(
+        # ── STREAMING CALL ─────────────────────────
+        stream = client.chat.completions.create(
             model="gpt-4o-mini",
             tools=tools,
-            messages=messages
+            messages=messages,
+            stream=True
         )
 
-        choice = response.choices[0]
+        # ── COLLECT STREAM ─────────────────────────
+        collected_content = ""
+        collected_tool_calls = []
+        current_tool_call = None
+        finish_reason = None
 
-        if choice.finish_reason == "tool_calls":
-            messages.append(choice.message)
+        emit("\n✅ Answer:\n")
 
-            for tool_call in choice.message.tool_calls:
-                fn_name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
+        for chunk in stream:
+            choice = chunk.choices[0]
+            delta = choice.delta
+            finish_reason = choice.finish_reason
 
-                print(f"🛠️  Using tool: {fn_name}")
+            # ── TEXT CHUNK → collect completely ────
+            if delta.content:
+                collected_content += delta.content
+                if not callback:
+                    print(delta.content, end="", flush=True)
+
+            # ── TOOL CALL CHUNK → collect fully ────
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    if tc.index is not None:
+                        # new tool call starting
+                        if len(collected_tool_calls) <= tc.index:
+                            collected_tool_calls.append({
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""}
+                            })
+                        if tc.id:
+                            collected_tool_calls[tc.index]["id"] = tc.id
+                        if tc.function.name:
+                            collected_tool_calls[tc.index]["function"]["name"] = tc.function.name
+                        if tc.function.arguments:
+                            collected_tool_calls[tc.index]["function"]["arguments"] += tc.function.arguments
+
+        # ── AFTER STREAM ENDS ──────────────────────
+        if finish_reason == "tool_calls":
+            # clear the "Answer:" line since it was a tool call
+            if not callback:
+                print("\r" + " " * 20 + "\r", end="", flush=True)
+
+            # build assistant message
+            assistant_message = {"role": "assistant", "content": collected_content or None, "tool_calls": []}
+            tool_results = []
+
+            for tc in collected_tool_calls:
+                fn_name = tc["function"]["name"]
+                args = json.loads(tc["function"]["arguments"])
+
+                emit(f"🛠️  Using tool: {fn_name}")
+                assistant_message["tool_calls"].append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": fn_name, "arguments": tc["function"]["arguments"]}
+                })
 
                 if fn_name == "analyze_data":
                     result = analyze_data(args["code"])
                 elif fn_name == "generate_chart":
-                    result = generate_chart(args["code"], args["description"], args["filename"])
+                    result = generate_chart(args["code"], args["description"], args["filename"], callback=callback)
                 else:
                     result = "Unknown tool."
 
-                # ── DEBUG (commented out) ──
-                # print(f"📄 Tool result: {result[:150]}...")
-
-                messages.append({
+                tool_results.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tc["id"],
                     "content": result
                 })
 
+            messages.append(assistant_message)
+            messages.extend(tool_results)
+
         else:
-            final_answer = choice.message.content
-            print(f"\n✅ Answer:\n{final_answer}")
+            # final answer streamed completely
+            final_answer = collected_content
+            if callback:
+                callback(f"FINAL_ANSWER:{final_answer}")
+            else:
+                emit("")  # newline after streaming
+                print(f"\n✅ Answer:\n{final_answer}")
             logger.finish_question(final_answer)
             return final_answer
 
-    print("\n⚠️ Max iterations reached!")
-    logger.finish_question("Max iterations reached — no final answer.")
+    emit("\n⚠️ Max iterations reached!")
+    logger.finish_question("Max iterations reached.")
     return None
