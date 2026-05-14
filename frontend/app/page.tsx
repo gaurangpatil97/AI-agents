@@ -12,6 +12,16 @@ interface Message {
 }
 
 export default function Home() {
+  // Session management
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [datasetSource, setDatasetSource] = useState<string | null>(null);
+  const [datasetName, setDatasetName] = useState<string>('');
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [availableDatasets, setAvailableDatasets] = useState<any[]>([]);
+  const [datasetPickerExpanded, setDatasetPickerExpanded] = useState(false);
+
+  // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -62,15 +72,90 @@ export default function Home() {
     });
   };
 
-  const suggestedQuestions = [
-    { text: 'Which product had highest sales?', icon: '📊' },
-    { text: 'Show me sales by region as pie chart', icon: '🥧' },
-    { text: 'What is the monthly sales trend?', icon: '📈' },
-    { text: 'Which age group spends the most?', icon: '👥' },
-  ];
+  const suggestionsByDataset: Record<string, string[]> = {
+    'sales_data.csv': [
+      'Which product had highest sales?',
+      'Show me sales by region as pie chart',
+      'What is the monthly sales trend for 2023?',
+      'Which age group spends the most?'
+    ],
+    'inventory_data.csv': [
+      'Which product has the lowest stock level?',
+      'Show me warehouse cost by region as pie chart',
+      'Which products are below reorder point?',
+      'What is the stock trend over time?'
+    ],
+    'customer_data.csv': [
+      'Which region has the most loyal customers?',
+      'Show me total spending by age group',
+      'What is the average loyalty score by region?',
+      'Which category do customers prefer the most?'
+    ]
+  };
 
+  const suggestions = suggestionsByDataset[datasetName] || suggestionsByDataset['sales_data.csv'];
+
+  const handleStartSession = async () => {
+    if (!datasetSource) return;
+
+    try {
+      const response = await fetch('http://localhost:8000/session/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataset_source: datasetSource,
+          dataset_name: datasetName || 'sales_data.csv',
+        }),
+      });
+      const data = await response.json();
+      if (data.session_id) {
+        setSessionId(data.session_id);
+        setDatasetName(data.dataset_name);
+      }
+    } catch (error) {
+      console.error('Failed to start session:', error);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionId) return;
+
+    try {
+      const response = await fetch('http://localhost:8000/session/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const data = await response.json();
+      setSummaryText(data.summary || 'Session ended.');
+      setShowSummaryModal(true);
+
+      setTimeout(() => {
+        setShowSummaryModal(false);
+        resetToDatasetPicker();
+      }, 5000);
+    } catch (error) {
+      console.error('Failed to end session:', error);
+    }
+  };
+
+  const resetToDatasetPicker = () => {
+    setSessionId(null);
+    setDatasetSource(null);
+    setDatasetName('');
+    setMessages([]);
+    setInputValue('');
+    setIsLoading(false);
+    if (ws) ws.close();
+    setWs(null);
+    streamingContentRef.current = '';
+  };
+
+  // WebSocket connection - only after session starts
   useEffect(() => {
-    const websocket = new WebSocket('ws://localhost:8000/ws');
+    if (!sessionId) return;
+
+    const websocket = new WebSocket(`ws://localhost:8000/ws?session_id=${sessionId}`);
 
     websocket.onopen = () => {
       console.log('Connected!');
@@ -91,6 +176,7 @@ export default function Home() {
         }
 
         if (isFinalAnswer) {
+          setIsLoading(false);
           if (messageText.includes('===') || messageText.includes('---')) {
             return;
           }
@@ -158,7 +244,7 @@ export default function Home() {
         websocket.close();
       }
     };
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -372,6 +458,185 @@ export default function Home() {
   };
 
   // Empty state - Home Screen
+  if (!sessionId) {
+    return (
+      <div className="min-h-screen bg-linear-to-br from-gray-950 via-slate-900 to-gray-950 flex flex-col items-center justify-center px-6 py-12" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <div className="w-full max-w-2xl">
+          {/* Title with radial gradient glow effect */}
+          <div className="text-center mb-16 relative">
+            <div className="absolute inset-0 bg-gradient-radial from-indigo-500/20 via-transparent to-transparent blur-3xl opacity-60 -z-10" style={{ width: '500px', left: '50%', transform: 'translateX(-50%)', top: '-100px' }}></div>
+            
+            {/* SVG Bar Chart Icon */}
+            <div className="flex justify-center mb-6">
+              <svg className="w-16 h-16 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="3" y="13" width="3" height="8" fill="currentColor" />
+                <rect x="10.5" y="8" width="3" height="13" fill="currentColor" />
+                <rect x="18" y="4" width="3" height="17" fill="currentColor" />
+              </svg>
+            </div>
+
+            <h1 className="text-5xl font-bold text-gray-50 mb-3 tracking-tight">
+              Choose your dataset
+            </h1>
+            <p className="text-base text-slate-400">
+              Select a data source to begin your analysis session
+            </p>
+          </div>
+
+          {/* Dataset Options - Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            {/* Local Dataset */}
+            <button
+              onClick={async () => {
+                try {
+                  const response = await fetch('http://localhost:8000/datasets');
+                  const datasets = await response.json();
+                  setAvailableDatasets(datasets);
+                  setDatasetPickerExpanded(true);
+                } catch (error) {
+                  console.error('Failed to fetch datasets:', error);
+                }
+              }}
+              className={`p-6 text-left rounded-2xl border transition ${
+                datasetName && datasetSource === 'local'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <span className="text-2xl">📁</span>
+                <span className={`text-xs px-3 py-1 rounded-full ${datasetName && datasetSource === 'local' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700/50 text-slate-400'}`}>
+                  {datasetName && datasetSource === 'local' ? '✓ Selected' : 'Available'}
+                </span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-100 mb-1">Use existing dataset</h3>
+              <p className="text-sm text-slate-400">
+                {datasetName && datasetSource === 'local' ? datasetName : 'Browse available datasets'}
+              </p>
+            </button>
+
+            {/* Upload CSV */}
+            <button
+              onClick={() => {
+                setDatasetSource('upload');
+                // Do not set a placeholder datasetName here; only set datasetName when a real file is chosen
+              }}
+              className={`p-6 text-left rounded-2xl border transition ${
+                datasetSource === 'upload'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <span className="text-2xl">⬆️</span>
+                <span className={`text-xs px-3 py-1 rounded-full ${datasetSource === 'upload' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700/50 text-slate-400'}`}>
+                  {datasetSource === 'upload' ? '✓ Selected' : 'Available'}
+                </span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-100 mb-1">Upload a CSV file</h3>
+              <p className="text-sm text-slate-400">Upload from your computer</p>
+            </button>
+
+            {/* Google Drive */}
+            <button
+              onClick={() => {
+                setDatasetSource('drive');
+                setDatasetName('from_drive.csv');
+              }}
+              className={`p-6 text-left rounded-2xl border transition ${
+                datasetSource === 'drive'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <span className="text-2xl">☁️</span>
+                <span className={`text-xs px-3 py-1 rounded-full ${datasetSource === 'drive' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700/50 text-slate-400'}`}>
+                  {datasetSource === 'drive' ? '✓ Selected' : 'Available'}
+                </span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-100 mb-1">Fetch from Google Drive</h3>
+              <p className="text-sm text-slate-400">Connect your Drive</p>
+            </button>
+          </div>
+
+          {/* Expanded Dataset Picker */}
+          {datasetPickerExpanded && (
+            <div className="mb-8 p-6 rounded-2xl border border-slate-700 bg-slate-800/50">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-slate-100">Available Datasets</h2>
+                <button
+                  onClick={() => {
+                    setDatasetPickerExpanded(false);
+                  }}
+                  className="text-sm text-slate-400 hover:text-slate-300 px-3 py-1 rounded-lg hover:bg-slate-700/50 transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {availableDatasets.length > 0 ? (
+                <div className="space-y-3">
+                  {availableDatasets.map((dataset) => (
+                    <div
+                      key={dataset.filename}
+                      className="p-4 rounded-xl border border-slate-600 bg-slate-700/30 hover:bg-slate-700/50 transition"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-slate-100">{dataset.name}</h3>
+                          <p className="text-sm text-slate-400">{dataset.description}</p>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {dataset.columns && dataset.columns.length > 0 ? (
+                              dataset.columns.map((col: string) => (
+                                <span
+                                  key={col}
+                                  className="text-xs px-2 py-1 rounded-full bg-slate-600/50 text-slate-300"
+                                >
+                                  {col}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">No columns info</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setDatasetSource('local');
+                          setDatasetName(dataset.filename);
+                          setDatasetPickerExpanded(false);
+                        }}
+                        className="mt-3 w-full py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition font-medium"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">Loading datasets...</p>
+              )}
+            </div>
+          )}
+          <button
+            onClick={handleStartSession}
+            disabled={!datasetName}
+            className="w-full py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 transition font-semibold text-lg mb-4"
+          >
+            Start Session
+          </button>
+
+          <p className="text-xs text-slate-500 text-center">
+            Powered by GPT-4o-mini • Multi-agent system
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state - Home Screen
   if (messages.length === 0 && !isLoading) {
     return (
       <div className="min-h-screen bg-linear-to-br from-gray-950 via-slate-900 to-gray-950 flex flex-col items-center justify-center px-6 py-12" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -393,7 +658,7 @@ export default function Home() {
               Data Analysis Agent
             </h1>
             <p className="text-base text-slate-400">
-              Intelligent multi-agent system for sales insights and visualization
+              Intelligent multi-agent system for data insights and visualization
             </p>
           </div>
 
@@ -426,15 +691,15 @@ export default function Home() {
 
           {/* Suggested Questions - As Chips */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {suggestedQuestions.map((q, idx) => (
+            {suggestions.map((text, idx) => (
               <button
                 key={idx}
-                onClick={() => handleSuggestedQuestion(q.text)}
+                onClick={() => handleSuggestedQuestion(text)}
                 className="group p-4 text-left rounded-2xl border border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600 transition text-slate-300 text-sm font-medium hover:shadow-lg hover:shadow-indigo-500/10"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">{q.icon}</span>
-                  <span className="group-hover:text-slate-100 transition">{q.text}</span>
+                  <span className="text-lg">💡</span>
+                  <span className="group-hover:text-slate-100 transition">{text}</span>
                 </div>
               </button>
             ))}
@@ -449,18 +714,39 @@ export default function Home() {
     <div className="min-h-screen bg-linear-to-br from-gray-950 via-slate-900 to-gray-950 flex flex-col" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Header - Proper Navbar */}
       <div className="bg-slate-900/50 backdrop-blur-sm border-b border-slate-700/50 px-8 py-5 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex items-center gap-3">
-          <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <rect x="3" y="13" width="2" height="8" fill="currentColor" />
-            <rect x="10" y="8" width="2" height="13" fill="currentColor" />
-            <rect x="17" y="4" width="2" height="17" fill="currentColor" />
-          </svg>
-          <div>
-            <h1 className="text-lg font-semibold text-slate-50">Data Analysis Agent</h1>
-            <p className="text-xs text-slate-500">Multi-agent sales analysis system</p>
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="3" y="13" width="2" height="8" fill="currentColor" />
+              <rect x="10" y="8" width="2" height="13" fill="currentColor" />
+              <rect x="17" y="4" width="2" height="17" fill="currentColor" />
+            </svg>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-50">Data Analysis Agent</h1>
+              <p className="text-xs text-slate-500">Multi-agent sales analysis system</p>
+            </div>
           </div>
+          <button
+            onClick={handleEndSession}
+            className="text-sm px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100 transition font-medium"
+          >
+            End Session
+          </button>
         </div>
       </div>
+
+      {/* Summary Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-slate-800 rounded-2xl p-8 max-w-md border border-slate-700 shadow-2xl">
+            <h2 className="text-xl font-semibold text-slate-100 mb-4">Session Summary</h2>
+            <div className="text-sm text-slate-300 whitespace-pre-wrap mb-6 max-h-48 overflow-y-auto font-mono">
+              {summaryText}
+            </div>
+            <p className="text-xs text-slate-500 text-center">Redirecting to dataset picker...</p>
+          </div>
+        </div>
+      )}
 
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto px-8 py-8">

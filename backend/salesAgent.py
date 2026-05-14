@@ -1,7 +1,10 @@
 import os
 import json
 import time
+import re
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from openai import OpenAI
@@ -15,8 +18,13 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 today = date.today().strftime("%B %d, %Y")
 
 df = pd.read_csv("sales_data.csv", parse_dates=["Date"])
-print(f"✅ Loaded dataset: {len(df)} rows, {len(df.columns)} columns")
-print(f"📊 Columns: {list(df.columns)}\n")
+
+# ── DYNAMIC DATASET LOADER ────────────────────────
+def load_dataset(filename: str):
+    global df
+    df = pd.read_csv(filename, parse_dates=["Date"] if "Date" in pd.read_csv(filename, nrows=1).columns else [])
+    print(f"✅ Loaded dataset: {filename} — {len(df)} rows")
+    return list(df.columns)
 
 # ── LOGGER ────────────────────────────────────────
 class AuditLogger:
@@ -159,7 +167,7 @@ def analyze_data(code: str) -> str:
         code = code.replace(";", "\n")
         lines = code.strip().split("\n")
         last_line = lines[-1].strip()
-        if not last_line.startswith("result") and "=" not in last_line:
+        if not last_line.startswith("result") and not re.search(r'^\s*\w+\s*=', last_line):
             lines[-1] = f"result = {last_line}"
             code = "\n".join(lines)
 
@@ -172,15 +180,13 @@ def analyze_data(code: str) -> str:
         local_vars = {"df": df.copy(), "pd": pd, "np": __import__('numpy')}
         exec(code, local_vars, local_vars)
 
-        result = local_vars.get("result")
-        if result is None:
-            user_vars = {
-                k: v for k, v in local_vars.items()
-                if k not in ["df", "pd", "np"]
-                and not k.startswith("__")
-                and not callable(v)
-            }
-            result = list(user_vars.values())[-1] if user_vars else "No result found."
+        result = local_vars.get("result", None)
+        if result is None or (hasattr(result, 'empty') and result.empty):
+            result = "No result found."
+        elif hasattr(result, 'to_string'):
+            result = result.to_string()
+        else:
+            result = str(result)
 
         time_taken = f"{time.time() - start:.2f}s"
         logger.log_step(tool="analyze_data", code=code, result=str(result), success=True, time_taken=time_taken)
@@ -258,11 +264,14 @@ def run_agent(user_question: str, memory_context: str = "No previous context ava
         logger.finish_question(f"BLOCKED: {reason}")
         return None
 
+    date_col = 'Date' if 'Date' in df.columns else 'Last_Purchase_Date' if 'Last_Purchase_Date' in df.columns else None
+    date_range_str = f"The data spans from {df[date_col].min()} to {df[date_col].max()}." if date_col else "No date column available."
+
     messages = [
         {"role": "system", "content": f"""You are a data analysis agent. Today is {today}.
 You have access to a sales dataset with these columns: {list(df.columns)}.
 The Date column is already parsed as datetime.
-The data spans from {df['Date'].min().date()} to {df['Date'].max().date()} with {len(df)} records.
+{date_range_str} Total records: {len(df)}.
 Use analyze_data to answer questions and generate_chart to create visualizations.
 
 === CHART GENERATION PATTERN (ALWAYS FOLLOW) ===

@@ -1,14 +1,16 @@
 import os
 import time
 from dotenv import load_dotenv
-from memoryAgent import get_memory_summary
+from database import save_message, get_session_messages
 from salesAgent import run_agent
 from driveAgent import fetch_csv_from_drive, upload_chart_to_drive
 from clarifierAgent import clarify_question, is_vague
 
 load_dotenv()
 
-def run_pipeline(user_question: str, callback=None):
+def run_pipeline(user_question: str, callback=None, session_id: str = None):
+    original_question = user_question
+
     def emit(msg: str):
         if callback:
             callback(msg)
@@ -20,8 +22,14 @@ def run_pipeline(user_question: str, callback=None):
     emit(f"{'='*60}")
 
     # ── STEP 1: GET MEMORY CONTEXT ────────────────
-    emit("\n🧠 Memory Agent: fetching context...")
-    memory_context = get_memory_summary(callback=callback)
+    emit("\n🧠 Memory: fetching last Q&A for this session...")
+    # Get memory context from DB instead of audit log
+    session_messages = get_session_messages(session_id) if session_id else []
+    if session_messages:
+        last = session_messages[-1]
+        memory_context = f"Previous Q: {last['question']}\nPrevious A: {last['answer']}"
+    else:
+        memory_context = "No previous context available."
 
     # ── STEP 2: NON-LINEAR ROUTING ────────────────
     if is_vague(user_question):
@@ -35,6 +43,7 @@ def run_pipeline(user_question: str, callback=None):
     charts_dir = "charts"
     os.makedirs(charts_dir, exist_ok=True)
     charts_before = set(os.listdir(charts_dir))
+    chart_path = None
 
     # ── STEP 4: RUN ANALYSIS AGENT ────────────────
     emit("🤖 Analysis Agent: working on it...")
@@ -46,9 +55,18 @@ def run_pipeline(user_question: str, callback=None):
         new_charts = charts_after - charts_before  # only brand new files
         if new_charts:
             latest = os.path.join(charts_dir, list(new_charts)[0])
+            chart_path = latest
             emit(f"\n☁️  Drive Agent: uploading {list(new_charts)[0]} to Drive...")
             link = upload_chart_to_drive(latest)
             emit(f"🔗 Chart link: {link}")
+
+        if session_id:
+            save_message(
+                session_id=session_id,
+                question=original_question,
+                answer=answer,
+                chart_path=chart_path if chart_path else None,
+            )
 
     return answer
 
