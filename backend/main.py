@@ -1,12 +1,14 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
 import os
+import shutil
 import sys
 from uuid import uuid4
 import pandas as pd
+from openai import OpenAI
 
 sys.path.append(os.path.dirname(__file__))
 from database import init_db, create_session, generate_summary, end_session
@@ -74,6 +76,56 @@ async def get_datasets():
         except:
             d["columns"] = []
     return datasets
+
+@app.post("/upload-csv")
+async def upload_csv(file: UploadFile = File(...)):
+    os.makedirs("uploads", exist_ok=True)
+    filename = f"uploads/uploaded_{uuid4().hex[:8]}_{file.filename}"
+    with open(filename, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    columns = load_dataset(filename)
+
+    client_openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    df_temp = pd.read_csv(filename)
+    sample = df_temp.head(3).to_string()
+
+    response = client_openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "user", "content": f"""Given a dataset with these columns: {columns}
+        
+Sample data:
+{sample}
+
+Generate exactly 4 short, specific, insightful questions a business analyst would ask about this dataset. 
+Return ONLY a JSON array of 4 strings, nothing else. No markdown, no explanation.
+Example: ["Question 1?", "Question 2?", "Question 3?", "Question 4?"]"""}
+        ],
+        max_tokens=200
+    )
+
+    questions = json.loads(response.choices[0].message.content.strip())
+
+    return {
+        "filename": filename,
+        "original_name": file.filename,
+        "columns": columns,
+        "questions": questions
+    }
+
+@app.post("/drive-fetch")
+async def drive_fetch_endpoint(data: dict = None):
+    from driveAgent import fetch_csv_from_drive
+    target = data.get("filename", "sales_data.csv") if data else "sales_data.csv"
+    filename = fetch_csv_from_drive(target)
+    if not filename or filename.startswith("❌"):
+        return {"error": "No CSV found in Drive folder"}
+    columns = load_dataset(filename)
+    return {
+        "filename": filename,
+        "columns": columns
+    }
 
 @app.post("/session/end")
 async def end_session_endpoint(data: dict):

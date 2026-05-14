@@ -30,6 +30,65 @@ export default function Home() {
   const [expandedAccordions, setExpandedAccordions] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isFetchingDrive, setIsFetchingDrive] = useState(false);
+  const [driveStatus, setDriveStatus] = useState<string>('Connect your Drive');
+  const [uploadedQuestions, setUploadedQuestions] = useState<string[]>([]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://localhost:8000/upload-csv', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.filename) {
+        setDatasetName(data.filename);
+        setDatasetSource('upload');
+        if (data.questions) {
+          setUploadedQuestions(data.questions);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to upload file:', error);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDriveFetch = async () => {
+    setIsFetchingDrive(true);
+    setDriveStatus('Fetching from Drive...');
+    try {
+      const response = await fetch('http://localhost:8000/drive-fetch', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.filename) {
+        setDatasetName(data.filename);
+        setDatasetSource('drive');
+        setDriveStatus(`✅ Fetched: ${data.filename.split('/').pop()}`);
+      } else {
+        setDriveStatus('❌ Drive fetch failed');
+      }
+    } catch (error) {
+      console.error('Failed to fetch from Drive:', error);
+      setDriveStatus('❌ Drive fetch failed');
+    } finally {
+      setIsFetchingDrive(false);
+    }
+  };
 
   const appendPipelineMessage = (text: string) => {
     setMessages((prev) => [
@@ -93,7 +152,9 @@ export default function Home() {
     ]
   };
 
-  const suggestions = suggestionsByDataset[datasetName] || suggestionsByDataset['sales_data.csv'];
+  const suggestions = datasetSource === 'upload' && uploadedQuestions.length > 0
+    ? uploadedQuestions
+    : (suggestionsByDataset[datasetName] || suggestionsByDataset['sales_data.csv']);
 
   const handleStartSession = async () => {
     if (!datasetSource) return;
@@ -516,38 +577,45 @@ export default function Home() {
             </button>
 
             {/* Upload CSV */}
-            <button
-              onClick={() => {
-                setDatasetSource('upload');
-                // Do not set a placeholder datasetName here; only set datasetName when a real file is chosen
-              }}
-              className={`p-6 text-left rounded-2xl border transition ${
-                datasetSource === 'upload'
-                  ? 'border-indigo-500 bg-indigo-500/10'
-                  : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <span className="text-2xl">⬆️</span>
-                <span className={`text-xs px-3 py-1 rounded-full ${datasetSource === 'upload' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700/50 text-slate-400'}`}>
-                  {datasetSource === 'upload' ? '✓ Selected' : 'Available'}
-                </span>
-              </div>
-              <h3 className="text-lg font-semibold text-slate-100 mb-1">Upload a CSV file</h3>
-              <p className="text-sm text-slate-400">Upload from your computer</p>
-            </button>
+            <div>
+              <input
+                type="file"
+                accept=".csv"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className={`p-6 text-left rounded-2xl border transition w-full h-full ${
+                  datasetSource === 'upload'
+                    ? 'border-indigo-500 bg-indigo-500/10'
+                    : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
+                } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-2xl">⬆️</span>
+                  <span className={`text-xs px-3 py-1 rounded-full ${datasetSource === 'upload' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700/50 text-slate-400'}`}>
+                    {datasetSource === 'upload' ? '✓ Selected' : 'Available'}
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Upload a CSV file</h3>
+                <p className="text-sm text-slate-400">
+                  {isUploading ? 'Uploading...' : datasetSource === 'upload' && datasetName ? `Selected: ${datasetName.split('/').pop()}` : 'Upload from your computer'}
+                </p>
+              </button>
+            </div>
 
             {/* Google Drive */}
             <button
-              onClick={() => {
-                setDatasetSource('drive');
-                setDatasetName('from_drive.csv');
-              }}
+              onClick={handleDriveFetch}
+              disabled={isFetchingDrive}
               className={`p-6 text-left rounded-2xl border transition ${
                 datasetSource === 'drive'
                   ? 'border-indigo-500 bg-indigo-500/10'
                   : 'border-slate-700 bg-slate-800/30 hover:bg-slate-700/50 hover:border-slate-600'
-              }`}
+              } ${isFetchingDrive ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <div className="flex items-start justify-between mb-3">
                 <span className="text-2xl">☁️</span>
@@ -556,7 +624,7 @@ export default function Home() {
                 </span>
               </div>
               <h3 className="text-lg font-semibold text-slate-100 mb-1">Fetch from Google Drive</h3>
-              <p className="text-sm text-slate-400">Connect your Drive</p>
+              <p className="text-sm text-slate-400">{driveStatus}</p>
             </button>
           </div>
 
